@@ -2,8 +2,7 @@
 
 class Rack::MiniProfiler::Context
   attr_accessor :inject_js, :current_timer, :page_struct, :skip_backtrace,
-                :full_backtrace, :discard, :mpt_init, :measure, :inject_server_timing,
-                :n_plus_one_limit, :server_timing_sql_limit,
+                :full_backtrace, :discard, :mpt_init, :measure
 
   def initialize(opts = {})
     opts["measure"] = true unless opts.key? "measure"

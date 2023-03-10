@@ -66,9 +66,6 @@ module Rack
         context.inject_js     = config.auto_inject && (!env['HTTP_X_REQUESTED_WITH'].eql? 'XMLHttpRequest')
         context.page_struct   = TimerStruct::Page.new(env)
         context.current_timer = context.page_struct[:root]
-        context.inject_server_timing = config.inject_server_timing
-        context.n_plus_one_limit = config.n_plus_one_limit
-        context.server_timing_sql_limit = config.server_timing_sql_limit
         self.current          = context
       end
 
@@ -490,8 +487,7 @@ module Rack
       # inject header
       if headers.is_a? Hash
         headers['X-MiniProfiler-Ids'] = ids_comma_separated(env)
-        if current.inject_server_timing
-          debugger
+        if config.inject_server_timing
           headers['Server-Timing'] = page_struct_to_server_timings(current.page_struct).join(',')
         end
       end
@@ -748,33 +744,50 @@ This is the help menu of the <a href='#{Rack::MiniProfiler::SOURCE_CODE_URI}'>ra
 
 
     def sql_timings_to_server_timings(sql_timings, level, index, prefix)
-      # get the top 3 sql timings in detail
-      all_sql = sql_timings.map { |s| { trace: (s[:stack_trace_snippet].split(/\n/)[0..2] || 'unknown stack trace'),
+      reportable_timings = []
+      all_sql = sql_timings.map { |s| { trace: (s[:stack_trace_snippet].split(/\n/)[0..2].join(' ') || 'unknown stack trace'),
                                         command: s[:formatted_command_string].gsub(/\n/, ' '),
                                         duration: s[:duration_milliseconds] } }.sort_by { |s| s[:duration].to_f }
                            .reverse
-      top = all_sql[0..(current.server_timing_sql_limit -1)] || []
+      top = all_sql.slice(0, config.server_timing_sql_limit-1) || []
       reportable_timings = top.map.with_index { |t, index2| ["sql_#{level}_#{index}_#{index2}",
                                            "dur=#{t[:duration]}",
-                                           'desc="' + prefix + t[:trace] + " " + t[:command].gsub(',;', '_') + '"']
+                                           'desc="sql' + prefix + t[:trace] + " " + t[:command].gsub(',;', '_') + '"']
                                             .join(';') }
-      other_time = (all_sql[current.server_timing_sql_limit..-1] || []).map { |t| t[:duration] }.sum
-      other_count = (all_sql[current.server_timing_sql_limit..-1] || []).size
+      other_time = (all_sql.slice(config.server_timing_sql_limit-1,all_sql.size) || []).map { |t| t[:duration] }.sum
+      other_count = (all_sql.slice(config.server_timing_sql_limit-1,all_sql.size) || []).size
       reportable_timings << ["sql_other",
                              "dur=#{other_time}",
                              'desc="' + prefix + other_count.to_s + ' other sql statements"']
                               .join(';') if other_time > 0
-      other_lines = (sql_timings || []).map { |t| t[:formatted_command_string].split('\n') }
-                                       .flatten.group_by { |e| e }.map { |k, v| [k, v.length] }
-      top_lines = other_lines.sort_by { |o, c| c }.reverse[0..(current.server_timing_sql_limit -1)]
-      top_lines.each do |l, c|
+      other_lines = (sql_timings || []).map { |t| ({
+        name: make_sql_name(t[:stack_trace_snippet], t[:formatted_command_string]),
+        time: t[:duration_milliseconds]
+      }) }
+
+      other_lines = other_lines.group_by { |e| e[:name] }.map { |k, v| [k, v.length, v.map { |s| s[:time] }.sum] }
+      top_lines = other_lines.sort_by { |t| t[0] }.reverse
+      top_lines.each do |l, c, d|
         reportable_timings << ["possible_n_+1_#{level}_#{index}",
-                               "dur=#{c}",
+                               "dur=#{d}",
                                'desc="n+1(' + c.to_s + ') ' + prefix + l + '"']
-                                .join(';') if c > current.n_plus_one_limit
+                                .join(';') if c > config.n_plus_one_limit
       end
       reportable_timings
     end
+
+    def make_sql_name(trace, command)
+      trace_snippet = trace.split(/\n/)[0..2].join(' ') || 'unknown stack trace'
+      command_part = remove_sql_params(command)
+      trace_snippet + command_part
+    end
+
+    def remove_sql_params(sql_string)
+      #just make some assumptions here that we are using the @0 style params
+      return_value = sql_string.rindex('@0') ? sql_string.slice(0,sql_string.rindex('@0')-1).to_s : sql_string
+      (return_value || '').gsub(/\n/, ' ')
+    end
+
 
     # get_profile_script returns script to be injected inside current html page
     # By default, profile_script is appended to the end of all html requests automatically.
