@@ -114,6 +114,10 @@ describe Rack::MiniProfiler do
       expect(last_response.headers.has_key?('X-MiniProfiler-Ids')).to be(true)
     end
 
+    it 'has the Server-Timing header' do
+      expect(last_response.headers.has_key?('Server-Timing')).to be(true)
+    end
+
     it 'has only one X-MiniProfiler-Ids header' do
       h = last_response.headers['X-MiniProfiler-Ids']
       ids = h.split(",")
@@ -422,13 +426,16 @@ describe Rack::MiniProfiler do
       Rack::MiniProfiler.config.enabled = false
       get '/html'
       expect(last_response.headers.has_key?('X-MiniProfiler-Ids')).to be(false)
+      expect(last_response.headers.has_key?('Server-Timing')).to be(false)
     end
 
     it 'functionality can be re-enabled' do
       get '/html?pp=enable'
       expect(last_response.headers.has_key?('X-MiniProfiler-Ids')).to be(true)
+      expect(last_response.headers.has_key?('Server-Timing')).to be(true)
       get '/html'
       expect(last_response.headers.has_key?('X-MiniProfiler-Ids')).to be(true)
+      expect(last_response.headers.has_key?('Server-Timing')).to be(true)
     end
   end
 

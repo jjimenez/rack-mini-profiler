@@ -16,6 +16,9 @@ module Rack
       def self.default
         new.instance_eval {
           @auto_inject      = true # automatically inject on every html page
+          @inject_server_timing = true # inject server timings
+          @server_timing_sql_limit = 5 # number of top sql queries to inject
+          @n_plus_one_limit = 5 # number of repeated queries to indicate n+1
           @base_url_path    = "/mini-profiler-resources/".dup
           @cookie_path      = "/".dup
           @disable_caching  = true
@@ -66,7 +69,8 @@ module Rack
         }
       end
 
-      attr_accessor :authorization_mode, :auto_inject, :backtrace_ignores,
+      attr_accessor :authorization_mode, :auto_inject, :inject_server_timing,
+        :n_plus_one_limit, :server_timing_sql_limit, :backtrace_ignores,
         :backtrace_includes, :backtrace_remove, :backtrace_threshold_ms,
         :base_url_path, :cookie_path, :disable_caching, :enabled,
         :flamegraph_sample_rate, :logger, :pre_authorize_cb, :skip_paths,

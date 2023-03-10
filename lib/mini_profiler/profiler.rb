@@ -66,6 +66,9 @@ module Rack
         context.inject_js     = config.auto_inject && (!env['HTTP_X_REQUESTED_WITH'].eql? 'XMLHttpRequest')
         context.page_struct   = TimerStruct::Page.new(env)
         context.current_timer = context.page_struct[:root]
+        context.inject_server_timing = config.inject_server_timing
+        context.n_plus_one_limit = config.n_plus_one_limit
+        context.server_timing_sql_limit = config.server_timing_sql_limit
         self.current          = context
       end
 
@@ -487,6 +490,9 @@ module Rack
       # inject header
       if headers.is_a? Hash
         headers['X-MiniProfiler-Ids'] = ids_comma_separated(env)
+        if context.inject_server_timing
+          headers['Server-Timing'] = page_struct_to_server_timings(current.page_struct).join(',')
+        end
       end
 
       if current.inject_js && content_type =~ /text\/html/
@@ -719,6 +725,54 @@ This is the help menu of the <a href='#{Rack::MiniProfiler::SOURCE_CODE_URI}'>ra
 
     def ids_comma_separated(env)
       ids(env).join(",")
+    end
+
+    def page_struct_to_server_timings(page_struct)
+      root = page_struct[:root]
+      server_timing_for_element(root, 0, 0, '>')
+    end
+
+    def server_timing_for_element(element, level, index, prefix)
+      server_timings = []
+      name = (level == 0) ? 'root' : "nested_#{level}_#{index}"
+      duration, description = "dur=#{element[:duration_milliseconds]}", 'desc="' + element[:name] + '"'
+      server_timings << [name, duration, description].join(';')
+      server_timings = server_timings +  sql_timings_to_server_timings(element[:sql_timings], level, index, '>') if element[:has_sql_timings]
+      next_level = element[:children]
+      next_level.each_with_index do |child, idx|
+        server_timings = server_timings +  server_timing_for_element(child, level + 1, idx, prefix + prefix[0])
+      end
+      server_timings
+    end
+
+
+    def sql_timings_to_server_timings(sql_timings, level, index, prefix)
+      # get the top 3 sql timings in detail
+      all_sql = sql_timings.map { |s| { trace: (s[:stack_trace_snippet].split(/\n/)[0..2] || 'unknown stack trace'),
+                                        command: s[:formatted_command_string].gsub(/\n/, ' '),
+                                        duration: s[:duration_milliseconds] } }.sort_by { |s| s[:duration].to_f }
+                           .reverse
+      top = all_sql[0..(context.server_timing_sql_limit -1)] || []
+      reportable_timings = top.map.with_index { |t, index2| ["sql_#{level}_#{index}_#{index2}",
+                                           "dur=#{t[:duration]}",
+                                           'desc="' + prefix + t[:trace] + " " + t[:command].gsub(',;', '_') + '"']
+                                            .join(';') }
+      other_time = (all_sql[context.server_timing_sql_limit..-1] || []).map { |t| t[:duration] }.sum
+      other_count = (all_sql[context.server_timing_sql_limit..-1] || []).size
+      reportable_timings << ["sql_other",
+                             "dur=#{other_time}",
+                             'desc="' + prefix + other_count.to_s + ' other sql statements"']
+                              .join(';') if other_time > 0
+      other_lines = (sql_timings || []).map { |t| t[:formatted_command_string].split('\n') }
+                                       .flatten.group_by { |e| e }.map { |k, v| [k, v.length] }
+      top_lines = other_lines.sort_by { |o, c| c }.reverse[0..(context.server_timing_sql_limit -1)]
+      top_lines.each do |l, c|
+        reportable_timings << ["possible_n_+1_#{level}_#{index}",
+                               "dur=#{c}",
+                               'desc="n+1(' + c.to_s + ') ' + prefix + l + '"']
+                                .join(';') if c > context.n_plus_one_limit
+      end
+      reportable_timings
     end
 
     # get_profile_script returns script to be injected inside current html page
