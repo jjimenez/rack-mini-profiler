@@ -491,6 +491,7 @@ module Rack
       if headers.is_a? Hash
         headers['X-MiniProfiler-Ids'] = ids_comma_separated(env)
         if current.inject_server_timing
+          debugger
           headers['Server-Timing'] = page_struct_to_server_timings(current.page_struct).join(',')
         end
       end
