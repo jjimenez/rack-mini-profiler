@@ -490,7 +490,7 @@ module Rack
       # inject header
       if headers.is_a? Hash
         headers['X-MiniProfiler-Ids'] = ids_comma_separated(env)
-        if context.inject_server_timing
+        if current.inject_server_timing
           headers['Server-Timing'] = page_struct_to_server_timings(current.page_struct).join(',')
         end
       end
@@ -752,25 +752,25 @@ This is the help menu of the <a href='#{Rack::MiniProfiler::SOURCE_CODE_URI}'>ra
                                         command: s[:formatted_command_string].gsub(/\n/, ' '),
                                         duration: s[:duration_milliseconds] } }.sort_by { |s| s[:duration].to_f }
                            .reverse
-      top = all_sql[0..(context.server_timing_sql_limit -1)] || []
+      top = all_sql[0..(current.server_timing_sql_limit -1)] || []
       reportable_timings = top.map.with_index { |t, index2| ["sql_#{level}_#{index}_#{index2}",
                                            "dur=#{t[:duration]}",
                                            'desc="' + prefix + t[:trace] + " " + t[:command].gsub(',;', '_') + '"']
                                             .join(';') }
-      other_time = (all_sql[context.server_timing_sql_limit..-1] || []).map { |t| t[:duration] }.sum
-      other_count = (all_sql[context.server_timing_sql_limit..-1] || []).size
+      other_time = (all_sql[current.server_timing_sql_limit..-1] || []).map { |t| t[:duration] }.sum
+      other_count = (all_sql[current.server_timing_sql_limit..-1] || []).size
       reportable_timings << ["sql_other",
                              "dur=#{other_time}",
                              'desc="' + prefix + other_count.to_s + ' other sql statements"']
                               .join(';') if other_time > 0
       other_lines = (sql_timings || []).map { |t| t[:formatted_command_string].split('\n') }
                                        .flatten.group_by { |e| e }.map { |k, v| [k, v.length] }
-      top_lines = other_lines.sort_by { |o, c| c }.reverse[0..(context.server_timing_sql_limit -1)]
+      top_lines = other_lines.sort_by { |o, c| c }.reverse[0..(current.server_timing_sql_limit -1)]
       top_lines.each do |l, c|
         reportable_timings << ["possible_n_+1_#{level}_#{index}",
                                "dur=#{c}",
                                'desc="n+1(' + c.to_s + ') ' + prefix + l + '"']
-                                .join(';') if c > context.n_plus_one_limit
+                                .join(';') if c > current.n_plus_one_limit
       end
       reportable_timings
     end
