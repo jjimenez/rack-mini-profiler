@@ -732,7 +732,7 @@ This is the help menu of the <a href='#{Rack::MiniProfiler::SOURCE_CODE_URI}'>ra
     def server_timing_for_element(element, level, index, prefix)
       server_timings = []
       name = (level == 0) ? 'root' : "nested_#{level}_#{index}"
-      duration, description = "dur=#{element[:duration_milliseconds]}", 'desc="' + element[:name] + '"'
+      duration, description = "dur=#{element[:duration_milliseconds]}", 'desc="' + prefix + element[:name] + '"'
       server_timings << [name, duration, description].join(';')
       server_timings = server_timings +  sql_timings_to_server_timings(element[:sql_timings], level, index, prefix) if element[:has_sql_timings]
       next_level = element[:children]
