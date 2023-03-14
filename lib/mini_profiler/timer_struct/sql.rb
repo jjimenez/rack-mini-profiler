@@ -9,14 +9,15 @@ module Rack
         attr_accessor :parent
 
         def initialize(query, duration_ms, page, parent, params = nil, skip_backtrace = false, full_backtrace = false)
-
           stack_trace = nil
+          no_cache = false
           unless skip_backtrace || duration_ms < Rack::MiniProfiler.config.backtrace_threshold_ms
             # Allow us to filter the stack trace
             stack_trace = "".dup
             # Clean up the stack trace if there are options to do so
             Kernel.caller.each do |ln|
               ln.gsub!(Rack::MiniProfiler.config.backtrace_remove, '') if Rack::MiniProfiler.config.backtrace_remove && !full_backtrace
+              no_cache = no_cache || ln.include?('database_statements')
               if    full_backtrace ||
                     (
                       (
@@ -45,7 +46,7 @@ module Rack
             first_fetch_duration_milliseconds: duration_ms,
             parameters: query ? trim_binds(params) : nil,
             parent_timing_id: nil,
-            is_duplicate: false
+            is_duplicate: no_cache ? false : true
           )
         end
 

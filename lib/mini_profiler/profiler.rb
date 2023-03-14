@@ -745,9 +745,12 @@ This is the help menu of the <a href='#{Rack::MiniProfiler::SOURCE_CODE_URI}'>ra
 
     def sql_timings_to_server_timings(sql_timings, level, index, prefix)
       reportable_timings = []
-      all_sql = sql_timings.map { |s| { trace: (s[:stack_trace_snippet].split(/\n/)[0..2].join(' ') || 'unknown stack trace'),
+      non_duplicate_sql = sql_timings.filter{|s| s[:is_duplicate] == false} || []
+      cache_sql = sql_timings.filter{|s| s[:is_duplicate] == true} || []
+
+      all_sql = non_duplicate_sql.map { |s| { trace: (s[:stack_trace_snippet].split(/\n/)[0..2].join(' ') || 'unknown stack trace'),
                                         command: s[:formatted_command_string].gsub(/\n/, ' '),
-                                        duration: s[:duration_milliseconds] } }.sort_by { |s| s[:duration].to_f }
+                                          duration: s[:duration_milliseconds] } }.sort_by { |s| s[:duration].to_f }
                            .reverse
       top = all_sql.slice(0, config.server_timing_sql_limit-1) || []
       reportable_timings = top.map.with_index { |t, index2| ["sql_#{level}_#{index}_#{index2}",
@@ -760,10 +763,20 @@ This is the help menu of the <a href='#{Rack::MiniProfiler::SOURCE_CODE_URI}'>ra
                              "dur=#{other_time}",
                              'desc="' + prefix + other_count.to_s + ' other sql statements"']
                               .join(';') if other_time > 0
+      cache_time = (cache_sql || []).map { |t| t[:duration_milliseconds] }.sum
+      cache_count = (cache_sql || []).size
+      reportable_timings << ["cache_sql",
+                             "dur=#{cache_time}",
+                             'desc="' + prefix + cache_count.to_s +
+                               '/' + (cache_count + non_duplicate_sql.length).to_s +
+                               ' sql statements used cache"']
+                              .join(';') if cache_count > 0
+
       other_lines = (sql_timings || []).map { |t| ({
         name: make_sql_name(t[:stack_trace_snippet], t[:formatted_command_string]),
-        time: t[:duration_milliseconds]
-      }) }
+        time: t[:duration_milliseconds],
+        duplicate: t[:is_duplicate]
+      }) }.filter{|o| o[:duplicate] == false}
 
       other_lines = other_lines.group_by { |e| e[:name] }.map { |k, v| [k, v.length, v.map { |s| s[:time] }.sum] }
       top_lines = other_lines.sort_by { |t| t[0] }.reverse
